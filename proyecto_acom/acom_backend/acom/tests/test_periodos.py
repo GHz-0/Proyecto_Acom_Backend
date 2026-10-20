@@ -8,6 +8,7 @@ from unittest import mock
 
 from django.db import IntegrityError, transaction
 from django.test import SimpleTestCase
+from django.urls import reverse
 
 from acom import selectors
 from acom.domain import reglas
@@ -224,3 +225,69 @@ class InscribirConVentanaTest(AcomTestCase):
         self.actividad.save()
         with self.assertRaises(ActividadInactivaError):
             inscripciones.inscribir(self.estudiante, self.actividad, hoy=date(2026, 8, 20))
+
+
+HOY_EN_VENTANA = date(2026, 8, 20)
+HOY_FUERA = date(2026, 9, 30)
+
+
+class PresentacionHtmlPeriodosTest(AcomTestCase):
+    """Capa de presentación (HTML): muestra la ventana y traduce el error a un mensaje."""
+
+    def setUp(self):
+        super().setUp()
+        self.periodo = Periodo.objects.create(
+            clave="2026-2", inicio=date(2026, 8, 17), fin=date(2026, 12, 18)
+        )
+        self.actividad.periodo = self.periodo
+        self.actividad.inscripcion_abre = ABRE
+        self.actividad.inscripcion_cierra = CIERRA
+        self.actividad.save()
+        self.client.force_login(self.estudiante)
+
+    def en(self, hoy):
+        return mock.patch("django.utils.timezone.localdate", return_value=hoy)
+
+    def test_la_lista_muestra_periodo_y_ventana(self):
+        with self.en(HOY_EN_VENTANA):
+            r = self.client.get(reverse("acom:lista_actividades"))
+        self.assertContains(r, "Periodo 2026-2")
+        self.assertContains(r, "Inscripción: del 17/08/2026 al 28/08/2026")
+
+    def test_la_lista_ofrece_inscribirse_solo_con_la_ventana_abierta(self):
+        url = reverse("acom:inscribirse", args=[self.actividad.id])
+        with self.en(HOY_EN_VENTANA):
+            abierta = self.client.get(reverse("acom:lista_actividades"))
+        self.assertContains(abierta, url)
+        self.assertNotContains(abierta, "Inscripción cerrada")
+
+        with self.en(HOY_FUERA):
+            cerrada = self.client.get(reverse("acom:lista_actividades"))
+        self.assertNotContains(cerrada, url)
+        self.assertContains(cerrada, "Inscripción cerrada")
+
+    def test_actividad_sin_fechas_se_muestra_sin_restriccion(self):
+        self.actividad.periodo = None
+        self.actividad.inscripcion_abre = self.actividad.inscripcion_cierra = None
+        self.actividad.save()
+        r = self.client.get(reverse("acom:lista_actividades"))
+        self.assertContains(r, "sin restricción de fechas")
+        self.assertContains(r, reverse("acom:inscribirse", args=[self.actividad.id]))
+
+    def test_la_confirmacion_muestra_la_ventana(self):
+        r = self.client.get(reverse("acom:inscribirse", args=[self.actividad.id]))
+        self.assertContains(r, "Periodo: 2026-2")
+        self.assertContains(r, "Inscripción: del 17/08/2026 al 28/08/2026")
+
+    def test_inscribirse_fuera_de_la_ventana_muestra_error_y_no_500(self):
+        with self.en(HOY_FUERA):
+            r = self.client.post(reverse("acom:inscribirse", args=[self.actividad.id]))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "cerró el 28/08/2026")
+        self.assertEqual(Inscripcion.objects.count(), 0)
+
+    def test_inscribirse_dentro_de_la_ventana_redirige(self):
+        with self.en(HOY_EN_VENTANA):
+            r = self.client.post(reverse("acom:inscribirse", args=[self.actividad.id]))
+        self.assertRedirects(r, reverse("acom:mis_inscripciones"))
+        self.assertEqual(Inscripcion.objects.count(), 1)

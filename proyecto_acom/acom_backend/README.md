@@ -7,7 +7,7 @@ Sistema de Actividades Complementarias (TecNM) organizado en **cuatro capas**. E
 ```bash
 uv sync
 uv run python manage.py migrate
-uv run python manage.py test              # 30 pruebas (24 de acom + 6 de api)
+uv run python manage.py test              # 78 pruebas (60 de acom + 18 de api)
 uv run ruff check --no-fix acom api config
 uv run python manage.py createsuperuser
 uv run python manage.py runserver
@@ -36,7 +36,7 @@ curl http://localhost:8000/api/v1/actividades/ \
 
 | Endpoint | Método | Rol | Delegación |
 |---|---|---|---|
-| `/api/v1/actividades/` | GET | Cualquiera autenticado | `selectors.actividades_activas` |
+| `/api/v1/actividades/` (`?periodo=2026-2` opcional) | GET | Cualquiera autenticado | `selectors.actividades_activas` |
 | `/api/v1/actividades/<id>/inscribirse/` | POST | Estudiante | `services.inscripciones.inscribir` |
 | `/api/v1/mis-inscripciones/` | GET | Estudiante | `selectors.inscripciones_de` |
 | `/api/v1/mis-inscripciones/resumen/` | GET | Estudiante | `selectors.total_validado` + `domain.reglas.faltantes` |
@@ -46,6 +46,19 @@ curl http://localhost:8000/api/v1/actividades/ \
 | `/api/v1/departamento/inscripciones/<id>/validar/` | POST | Departamento (`can_validate_credits`) | `services.inscripciones.validar_y_registrar` |
 
 Los errores de negocio (`AcomError` y subclases) se traducen a HTTP en un solo lugar: `api/exceptions.py` — el mismo principio de "una sola fuente de verdad" que ya usa `services/permisos.py` para las reglas de autorización.
+
+## Periodos escolares y ventana de inscripción (E5)
+
+Las actividades pueden pertenecer a un **periodo escolar** (`Periodo`: clave única como `2026-2`, `inicio`, `fin`) y tener una **ventana de inscripción** (`inscripcion_abre` / `inscripcion_cierra`). Todo es opcional: una actividad sin fechas se inscribe sin restricción, así que los datos anteriores siguen funcionando.
+
+| Capa | Qué hay |
+|---|---|
+| Dominio | `reglas.inscripcion_abierta(hoy, abre, cierra) -> bool` (ventana **inclusiva**; una fecha ausente = sin límite de ese lado) e `InscripcionCerradaError`. Recibe `hoy` como parámetro: nunca consulta el reloj (lo vigila `test_el_dominio_nunca_consulta_el_reloj`). |
+| Aplicación | `inscribir(estudiante, actividad, hoy=None)` valida la ventana. Si se omite `hoy`, usa `timezone.localdate()` **aquí**, no en el dominio. Permite probar con fechas fijas. |
+| Infraestructura | `Periodo`, FK opcional `periodo` (`PROTECT`) y las dos fechas en la actividad; `CHECK` de `fin >= inicio` y de `abre <= cierra`; `selectors.actividades_activas(periodo=None)` acepta un `Periodo` o su clave. |
+| Presentación | HTML: la lista y la confirmación muestran el periodo y la ventana, y la lista oculta «Inscribirme» si está cerrada. API: `GET /api/v1/actividades/?periodo=2026-2` (clave inexistente → lista vacía) y los campos `periodo`, `inscripcion_abre`, `inscripcion_cierra`. Inscribirse fuera de la ventana responde **400** con el motivo (`abre el …` / `cerró el …`). |
+
+Decisiones: la ventana de la actividad **no** se deriva de `inicio`/`fin` del periodo (son datos independientes), y no se valida que la ventana caiga dentro del periodo.
 
 ## Las capas y la regla de dependencia
 

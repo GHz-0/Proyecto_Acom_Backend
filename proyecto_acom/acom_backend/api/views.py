@@ -8,7 +8,7 @@ datos primero.
 """
 
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -40,9 +40,24 @@ class PuedeValidarCreditos(permissions.BasePermission):
 class ActividadListView(APIView):
     """Catálogo de actividades complementarias activas, abiertas a inscripción."""
 
-    @extend_schema(responses=ActividadComplementariaSerializer(many=True))
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="periodo",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Clave del periodo escolar (p. ej. `2026-2`). Si se omite, se listan las "
+                    "actividades activas de todos los periodos; una clave inexistente "
+                    "da lista vacía."
+                ),
+            )
+        ],
+        responses=ActividadComplementariaSerializer(many=True),
+    )
     def get(self, request):
-        actividades = selectors.actividades_activas()
+        actividades = selectors.actividades_activas(request.query_params.get("periodo"))
         return Response(ActividadComplementariaSerializer(actividades, many=True).data)
 
 
@@ -54,7 +69,9 @@ class InscribirseView(APIView):
         request=None,
         responses={
             201: InscripcionSerializer,
-            400: OpenApiResponse(description="Actividad inactiva o ya inscrito"),
+            400: OpenApiResponse(
+                description="Actividad inactiva, ya inscrito o fuera de la ventana de inscripción"
+            ),
         },
     )
     def post(self, request, actividad_id):

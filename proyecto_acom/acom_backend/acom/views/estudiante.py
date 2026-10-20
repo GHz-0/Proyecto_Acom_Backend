@@ -2,6 +2,7 @@
 
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 
 from .. import selectors
 from ..domain import reglas
@@ -12,9 +13,13 @@ from ..services import inscripciones
 
 @login_required
 def lista_actividades(request):
-    return render(
-        request, "acom/lista_actividades.html", {"actividades": selectors.actividades_activas()}
-    )
+    hoy = timezone.localdate()
+    actividades = list(selectors.actividades_activas())
+    for actividad in actividades:  # solo para mostrar: la regla vive en el dominio
+        actividad.inscripcion_abierta = reglas.inscripcion_abierta(
+            hoy, actividad.inscripcion_abre, actividad.inscripcion_cierra
+        )
+    return render(request, "acom/lista_actividades.html", {"actividades": actividades})
 
 
 @login_required
