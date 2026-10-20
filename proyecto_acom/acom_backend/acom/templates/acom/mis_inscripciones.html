@@ -1,0 +1,12 @@
+{% extends "acom/base.html" %}
+{% block content %}
+<h1>Mis inscripciones</h1>
+<p>Créditos acumulados: {{ creditos_totales }} — faltan: {{ creditos_faltantes }}</p>
+<ul>
+  {% for i in inscripciones %}
+    <li>{{ i.actividad.nombre }} — {{ i.get_estado_display }}</li>
+  {% empty %}
+    <li>Aún no te has inscrito a ninguna actividad.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

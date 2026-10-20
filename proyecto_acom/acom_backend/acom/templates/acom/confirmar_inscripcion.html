@@ -1,0 +1,11 @@
+{% extends "acom/base.html" %}
+{% block content %}
+<h1>Inscribirme a {{ actividad.nombre }}</h1>
+<p>{{ actividad.descripcion }}</p>
+<p>Valor: {{ actividad.creditos_valor }} créditos</p>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post">
+  {% csrf_token %}
+  <button type="submit">Confirmar inscripción</button>
+</form>
+{% endblock %}

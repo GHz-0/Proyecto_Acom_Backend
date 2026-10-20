@@ -1,0 +1,12 @@
+{% extends "acom/base.html" %}
+{% block content %}
+<h1>Actividades complementarias</h1>
+<ul>
+  {% for a in actividades %}
+    <li>{{ a.nombre }} — {{ a.get_categoria_display }} — {{ a.creditos_valor }} créditos
+      <a href="{% url 'acom:inscribirse' a.id %}">Inscribirme</a></li>
+  {% empty %}
+    <li>No hay actividades activas.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

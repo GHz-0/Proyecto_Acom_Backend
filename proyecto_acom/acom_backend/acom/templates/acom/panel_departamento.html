@@ -1,0 +1,11 @@
+{% extends "acom/base.html" %}
+{% block content %}
+<h1>Validar constancia y registrar créditos</h1>
+<p>{{ inscripcion.estudiante }} — {{ inscripcion.actividad.nombre }} — {{ inscripcion.get_estado_display }}</p>
+{% if inscripcion.constancia %}<p>Folio: {{ inscripcion.constancia.folio }}</p>{% endif %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post">
+  {% csrf_token %}
+  <button type="submit">Validar y registrar créditos</button>
+</form>
+{% endblock %}

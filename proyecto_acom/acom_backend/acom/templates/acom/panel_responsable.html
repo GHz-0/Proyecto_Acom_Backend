@@ -1,0 +1,18 @@
+{% extends "acom/base.html" %}
+{% block content %}
+<h1>Evaluar inscripción</h1>
+<p>{{ inscripcion.estudiante }} — {{ inscripcion.actividad.nombre }} — {{ inscripcion.get_estado_display }}</p>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if inscripcion.estado == "inscrito" %}
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit" name="evaluar">Guardar evaluación</button>
+</form>
+{% elif inscripcion.estado == "evaluado_aprobado" %}
+<form method="post">
+  {% csrf_token %}
+  <button type="submit" name="emitir_constancia">Emitir constancia</button>
+</form>
+{% endif %}
+{% endblock %}
