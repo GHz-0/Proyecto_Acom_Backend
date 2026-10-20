@@ -4,11 +4,20 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
-from .models import ActividadComplementaria, Inscripcion, RegistroCreditos
+from .models import ActividadComplementaria, Inscripcion, Periodo, RegistroCreditos
 
 
-def actividades_activas():
-    return ActividadComplementaria.objects.filter(activa=True)
+def actividades_activas(periodo=None):
+    """Actividades activas.
+
+    Con `periodo` (un `Periodo` o su clave, p. ej. "2026-2") solo las de ese periodo.
+    """
+    actividades = ActividadComplementaria.objects.filter(activa=True).select_related("periodo")
+    if isinstance(periodo, Periodo):
+        return actividades.filter(periodo=periodo)
+    if periodo:
+        return actividades.filter(periodo__clave=periodo)
+    return actividades
 
 
 def inscripciones_de(estudiante):

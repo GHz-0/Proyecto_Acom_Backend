@@ -5,10 +5,15 @@ Las pruebas de dominio usan fechas fijas: ninguna depende del reloj real.
 
 from datetime import date
 
+from django.db import IntegrityError, transaction
 from django.test import SimpleTestCase
 
+from acom import selectors
 from acom.domain import reglas
 from acom.domain.exceptions import AcomError, InscripcionCerradaError
+from acom.models import ActividadComplementaria, CategoriaActividad, Periodo
+
+from .base import AcomTestCase
 
 ABRE = date(2026, 8, 17)
 CIERRA = date(2026, 8, 28)
@@ -64,3 +69,78 @@ class InscripcionAbiertaDominioTest(SimpleTestCase):
                     self.assertNotIn(
                         nodo.attr, relojes, f"{archivo.name} usa el reloj ({nodo.attr}): recíbelo"
                     )
+
+
+class InfraestructuraPeriodosTest(AcomTestCase):
+    """Capa de infraestructura: constraints del modelo y selector con filtro."""
+
+    def periodo(self, clave="2026-2", inicio=date(2026, 8, 17), fin=date(2026, 12, 18)):
+        return Periodo.objects.create(clave=clave, inicio=inicio, fin=fin)
+
+    def periodo_anterior(self):
+        return self.periodo("2026-1", inicio=date(2026, 1, 12), fin=date(2026, 6, 1))
+
+    def crear(self, nombre, **extra):
+        return ActividadComplementaria.objects.create(
+            nombre=nombre,
+            categoria=CategoriaActividad.CURSO,
+            responsable=self.responsable,
+            creditos_valor=1,
+            **extra,
+        )
+
+    def test_la_clave_del_periodo_es_unica(self):
+        self.periodo()
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.periodo()
+
+    def test_el_periodo_no_puede_terminar_antes_de_empezar(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.periodo("2026-3", inicio=date(2026, 12, 18), fin=date(2026, 8, 17))
+
+    def test_la_ventana_no_puede_cerrar_antes_de_abrir(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.crear(
+                "Mal", inscripcion_abre=date(2026, 8, 28), inscripcion_cierra=date(2026, 8, 17)
+            )
+
+    def test_la_ventana_acepta_una_sola_fecha_o_ninguna(self):
+        self.crear("Solo abre", inscripcion_abre=date(2026, 8, 17))
+        self.crear("Solo cierra", inscripcion_cierra=date(2026, 8, 28))
+        self.assertEqual(ActividadComplementaria.objects.count(), 3)  # + la del fixture
+
+    def test_un_periodo_con_actividades_no_se_puede_borrar(self):
+        periodo = self.periodo()
+        self.crear("Con periodo", periodo=periodo)
+        with self.assertRaises(Exception), transaction.atomic():
+            periodo.delete()
+
+    def test_actividades_activas_sin_periodo_devuelve_todas(self):
+        periodo = self.periodo()
+        self.crear("Con periodo", periodo=periodo)
+        nombres = {a.nombre for a in selectors.actividades_activas()}
+        self.assertEqual(nombres, {"Verano de Investigación", "Con periodo"})
+
+    def test_actividades_activas_filtra_por_instancia_de_periodo(self):
+        p1, p2 = self.periodo_anterior(), self.periodo("2026-2")
+        self.crear("A", periodo=p1)
+        self.crear("B", periodo=p2)
+        self.assertEqual([a.nombre for a in selectors.actividades_activas(p2)], ["B"])
+
+    def test_actividades_activas_filtra_por_clave(self):
+        p1, p2 = self.periodo_anterior(), self.periodo("2026-2")
+        self.crear("A", periodo=p1)
+        self.crear("B", periodo=p2)
+        self.assertEqual([a.nombre for a in selectors.actividades_activas("2026-1")], ["A"])
+
+    def test_el_filtro_por_periodo_no_incluye_inactivas(self):
+        periodo = self.periodo()
+        self.crear("Activa", periodo=periodo)
+        self.crear("Inactiva", periodo=periodo, activa=False)
+        self.assertEqual([a.nombre for a in selectors.actividades_activas("2026-2")], ["Activa"])
+
+    def test_clave_inexistente_devuelve_vacio(self):
+        self.assertEqual(list(selectors.actividades_activas("2099-9")), [])
+
+    def test_clave_vacia_equivale_a_no_filtrar(self):
+        self.assertEqual(selectors.actividades_activas("").count(), 1)
