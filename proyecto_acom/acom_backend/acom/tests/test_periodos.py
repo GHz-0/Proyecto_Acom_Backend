@@ -4,16 +4,22 @@ Las pruebas de dominio usan fechas fijas: ninguna depende del reloj real.
 """
 
 from datetime import date
+from unittest import mock
 
 from django.db import IntegrityError, transaction
 from django.test import SimpleTestCase
 
 from acom import selectors
 from acom.domain import reglas
-from acom.domain.exceptions import AcomError, InscripcionCerradaError
-from acom.models import ActividadComplementaria, CategoriaActividad, Periodo
+from acom.domain.exceptions import (
+    AcomError,
+    ActividadInactivaError,
+    InscripcionCerradaError,
+)
+from acom.models import ActividadComplementaria, CategoriaActividad, Inscripcion, Periodo
+from acom.services import inscripciones
 
-from .base import AcomTestCase
+from .base import AcomTestCase, User
 
 ABRE = date(2026, 8, 17)
 CIERRA = date(2026, 8, 28)
@@ -144,3 +150,77 @@ class InfraestructuraPeriodosTest(AcomTestCase):
 
     def test_clave_vacia_equivale_a_no_filtrar(self):
         self.assertEqual(selectors.actividades_activas("").count(), 1)
+
+
+class InscribirConVentanaTest(AcomTestCase):
+    """Capa de aplicación: `inscribir` valida la ventana con `hoy` inyectado (fechas fijas)."""
+
+    def setUp(self):
+        super().setUp()
+        self.actividad.inscripcion_abre = ABRE
+        self.actividad.inscripcion_cierra = CIERRA
+        self.actividad.save()
+
+    def test_inscribe_dentro_de_la_ventana(self):
+        insc = inscripciones.inscribir(self.estudiante, self.actividad, hoy=date(2026, 8, 20))
+        self.assertEqual(insc.actividad, self.actividad)
+
+    def test_inscribe_el_primer_y_el_ultimo_dia(self):
+        inscripciones.inscribir(self.estudiante, self.actividad, hoy=ABRE)
+        otro = self.crear_actividad("Otra", "1.00")
+        otro.inscripcion_abre, otro.inscripcion_cierra = ABRE, CIERRA
+        otro.save()
+        inscripciones.inscribir(self.estudiante, otro, hoy=CIERRA)
+        self.assertEqual(Inscripcion.objects.count(), 2)
+
+    def test_antes_de_abrir_lanza_error_claro_y_no_inscribe(self):
+        with self.assertRaises(InscripcionCerradaError) as ctx:
+            inscripciones.inscribir(self.estudiante, self.actividad, hoy=date(2026, 8, 16))
+        self.assertIn("abre el 17/08/2026", str(ctx.exception))
+        self.assertIn(self.actividad.nombre, str(ctx.exception))
+        self.assertEqual(Inscripcion.objects.count(), 0)
+
+    def test_despues_de_cerrar_lanza_error_claro_y_no_inscribe(self):
+        with self.assertRaises(InscripcionCerradaError) as ctx:
+            inscripciones.inscribir(self.estudiante, self.actividad, hoy=date(2026, 8, 29))
+        self.assertIn("cerró el 28/08/2026", str(ctx.exception))
+        self.assertEqual(Inscripcion.objects.count(), 0)
+
+    def test_solo_fecha_de_cierre_mensaje_de_cierre(self):
+        self.actividad.inscripcion_abre = None
+        self.actividad.save()
+        with self.assertRaises(InscripcionCerradaError) as ctx:
+            inscripciones.inscribir(self.estudiante, self.actividad, hoy=date(2026, 9, 1))
+        self.assertIn("cerró el 28/08/2026", str(ctx.exception))
+
+    def test_solo_fecha_de_apertura_mensaje_de_apertura(self):
+        self.actividad.inscripcion_cierra = None
+        self.actividad.save()
+        with self.assertRaises(InscripcionCerradaError) as ctx:
+            inscripciones.inscribir(self.estudiante, self.actividad, hoy=date(2026, 1, 1))
+        self.assertIn("abre el 17/08/2026", str(ctx.exception))
+
+    def test_sin_fechas_se_inscribe_en_cualquier_momento(self):
+        libre = self.crear_actividad("Sin fechas", "1.00")
+        for hoy in (date(1999, 1, 1), date(2999, 12, 31)):
+            Inscripcion.objects.all().delete()
+            inscripciones.inscribir(self.estudiante, libre, hoy=hoy)
+        self.assertEqual(Inscripcion.objects.count(), 1)
+
+    def test_sin_hoy_usa_la_fecha_local_actual(self):
+        with mock.patch("django.utils.timezone.localdate", return_value=date(2026, 8, 20)):
+            inscripciones.inscribir(self.estudiante, self.actividad)
+        self.assertEqual(Inscripcion.objects.count(), 1)
+
+        otro = User.objects.create_user("estudiante2", password="x")
+        with (
+            mock.patch("django.utils.timezone.localdate", return_value=date(2026, 9, 30)),
+            self.assertRaises(InscripcionCerradaError),
+        ):
+            inscripciones.inscribir(otro, self.actividad)
+
+    def test_actividad_inactiva_sigue_dando_su_propio_error(self):
+        self.actividad.activa = False
+        self.actividad.save()
+        with self.assertRaises(ActividadInactivaError):
+            inscripciones.inscribir(self.estudiante, self.actividad, hoy=date(2026, 8, 20))
