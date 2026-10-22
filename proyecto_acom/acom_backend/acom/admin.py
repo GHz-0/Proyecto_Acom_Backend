@@ -1,12 +1,26 @@
 from django.contrib import admin
 
-from .models import ActividadComplementaria, Constancia, Inscripcion, RegistroCreditos
+from .models import ActividadComplementaria, Constancia, Inscripcion, Periodo, RegistroCreditos
+
+
+@admin.register(Periodo)
+class PeriodoAdmin(admin.ModelAdmin):
+    list_display = ["clave", "inicio", "fin"]
 
 
 @admin.register(ActividadComplementaria)
 class ActividadComplementariaAdmin(admin.ModelAdmin):
-    list_display = ["nombre", "categoria", "responsable", "creditos_valor", "activa"]
-    list_filter = ["categoria", "activa"]
+    list_display = [
+        "nombre",
+        "categoria",
+        "responsable",
+        "creditos_valor",
+        "periodo",
+        "inscripcion_abre",
+        "inscripcion_cierra",
+        "activa",
+    ]
+    list_filter = ["categoria", "activa", "periodo"]
 
 
 @admin.register(Inscripcion)

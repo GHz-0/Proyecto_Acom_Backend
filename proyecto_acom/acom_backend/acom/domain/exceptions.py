@@ -23,3 +23,7 @@ class ActividadInactivaError(AcomError):
 
 class PermisoDenegadoError(AcomError):
     """El usuario no tiene permiso para ejecutar este caso de uso."""
+
+
+class InscripcionCerradaError(AcomError):
+    """La actividad no recibe inscripciones en esta fecha (fuera de su ventana)."""

@@ -1,5 +1,7 @@
 """Aplicación: un caso de uso por función. Orquesta permisos, dominio e infraestructura."""
 
+from datetime import date
+
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -9,6 +11,7 @@ from ..domain import reglas
 from ..domain.estados import EstadoInscripcion, validar_transicion
 from ..domain.exceptions import (
     ActividadInactivaError,
+    InscripcionCerradaError,
     InscripcionDuplicadaError,
     LimiteCreditosError,
 )
@@ -17,9 +20,29 @@ from ..signals import inscripcion_validada
 from . import permisos
 
 
-def inscribir(estudiante, actividad) -> Inscripcion:
+def _mensaje_inscripcion_cerrada(actividad, hoy: date) -> str:
+    if actividad.inscripcion_abre is not None and hoy < actividad.inscripcion_abre:
+        cuando = f"abre el {actividad.inscripcion_abre:%d/%m/%Y}"
+    else:
+        cuando = f"cerró el {actividad.inscripcion_cierra:%d/%m/%Y}"
+    return f"La inscripción a '{actividad.nombre}' {cuando}."
+
+
+def inscribir(estudiante, actividad, hoy: date | None = None) -> Inscripcion:
+    """Inscribe al estudiante si la actividad está activa y su ventana está abierta.
+
+    `hoy` es la fecha contra la que se valida la ventana de inscripción. Se puede
+    inyectar para probar con fechas fijas; si se omite se usa la fecha local actual.
+    El reloj se consulta aquí, en la capa de aplicación, nunca en el dominio.
+    """
     if not actividad.activa:
         raise ActividadInactivaError("Esta actividad ya no está activa.")
+    if hoy is None:
+        hoy = timezone.localdate()
+    if not reglas.inscripcion_abierta(
+        hoy, actividad.inscripcion_abre, actividad.inscripcion_cierra
+    ):
+        raise InscripcionCerradaError(_mensaje_inscripcion_cerrada(actividad, hoy))
     try:
         with transaction.atomic():
             return Inscripcion.objects.create(estudiante=estudiante, actividad=actividad)

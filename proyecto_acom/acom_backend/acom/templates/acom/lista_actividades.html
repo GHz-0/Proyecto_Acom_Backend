@@ -4,7 +4,13 @@
 <ul>
   {% for a in actividades %}
     <li>{{ a.nombre }} — {{ a.get_categoria_display }} — {{ a.creditos_valor }} créditos
-      <a href="{% url 'acom:inscribirse' a.id %}">Inscribirme</a></li>
+      {% if a.periodo %}— Periodo {{ a.periodo.clave }}{% endif %}
+      — {% include "acom/_ventana_inscripcion.html" with actividad=a %}
+      {% if a.inscripcion_abierta %}
+        <a href="{% url 'acom:inscribirse' a.id %}">Inscribirme</a>
+      {% else %}
+        <em>Inscripción cerrada</em>
+      {% endif %}</li>
   {% empty %}
     <li>No hay actividades activas.</li>
   {% endfor %}

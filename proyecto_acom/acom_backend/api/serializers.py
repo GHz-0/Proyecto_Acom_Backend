@@ -8,6 +8,7 @@ from acom.models import ActividadComplementaria, Constancia, Inscripcion, Regist
 class ActividadComplementariaSerializer(serializers.ModelSerializer):
     categoria_display = serializers.CharField(source="get_categoria_display", read_only=True)
     responsable_nombre = serializers.CharField(source="responsable.get_username", read_only=True)
+    periodo = serializers.SlugRelatedField(slug_field="clave", read_only=True)
 
     class Meta:
         model = ActividadComplementaria
@@ -20,6 +21,9 @@ class ActividadComplementariaSerializer(serializers.ModelSerializer):
             "responsable_nombre",
             "creditos_valor",
             "activa",
+            "periodo",
+            "inscripcion_abre",
+            "inscripcion_cierra",
         ]
         read_only_fields = fields
 

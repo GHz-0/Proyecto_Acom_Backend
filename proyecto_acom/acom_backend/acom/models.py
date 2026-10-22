@@ -15,6 +15,26 @@ class CategoriaActividad(models.TextChoices):
     IMPACTO_SOCIAL = "impacto_social", "Proyectos de impacto social y ambiente"
 
 
+class Periodo(models.Model):
+    """Periodo escolar (p. ej. "2026-2"). Agrupa las actividades que se ofertan en él."""
+
+    clave = models.CharField(max_length=20, unique=True)
+    inicio = models.DateField()
+    fin = models.DateField()
+
+    class Meta:
+        ordering = ["-inicio"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(fin__gte=models.F("inicio")),
+                name="periodo_fin_no_antes_de_inicio",
+            )
+        ]
+
+    def __str__(self):
+        return self.clave
+
+
 class ActividadComplementaria(models.Model):
     nombre = models.CharField(max_length=200)
     categoria = models.CharField(max_length=30, choices=CategoriaActividad.choices)
@@ -26,12 +46,30 @@ class ActividadComplementaria(models.Model):
     )
     creditos_valor = models.DecimalField(max_digits=4, decimal_places=2)
     activa = models.BooleanField(default=True)
+    # Opcionales: una actividad sin periodo ni fechas se inscribe sin restricción.
+    periodo = models.ForeignKey(
+        Periodo,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="actividades",
+    )
+    inscripcion_abre = models.DateField(null=True, blank=True)
+    inscripcion_cierra = models.DateField(null=True, blank=True)
 
     class Meta:
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(creditos_valor__gt=0), name="actividad_creditos_positivos"
-            )
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(inscripcion_abre__isnull=True)
+                    | models.Q(inscripcion_cierra__isnull=True)
+                    | models.Q(inscripcion_abre__lte=models.F("inscripcion_cierra"))
+                ),
+                name="actividad_ventana_inscripcion_valida",
+            ),
         ]
 
     def __str__(self):
